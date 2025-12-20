@@ -14,11 +14,17 @@ float voltage = 0.0;
 const int MICROSTEPS = 16;
 const unsigned int STEP_PULSE_US = 3125;
 
+const float PITCH_MAX_DEG = 20.0;
+const long M2_MICROSTEPS_PER_REV = 200L * MICROSTEPS;
+
 long m1MicrostepPos = 0;
 long m2MicrostepPos = 0;
 unsigned long sampleIndex = 0;
 
 int m2Dir = 1;
+
+long pitchMaxMicrosteps = 0;
+bool scanComplete = false;
 
 void stepPulses(int stepPin, int pulses);
 void emitEvent(const char* type);
@@ -39,11 +45,17 @@ void setup() {
   // Enable the stepper drivers (LOW typically enables)
   digitalWrite(ENABLE_PIN, LOW);
   digitalWrite(M2_DIR_PIN, LOW);
+  pitchMaxMicrosteps = (long)((PITCH_MAX_DEG / 360.0) * (float)M2_MICROSTEPS_PER_REV + 0.5);
   Serial.println("type,ms,sample,phase,m1_dir,m2_dir,m1_us,m2_us,adc,voltage");
   emitEvent("START");
 }
 
 void loop() {
+  if (scanComplete) {
+    delay(1000);
+    return;
+  }
+
   // Set direction forward
   digitalWrite(M1_DIR_PIN, LOW);
 
@@ -61,6 +73,9 @@ void loop() {
   stepPulses(M2_STEP_PIN, MICROSTEPS);
   m2MicrostepPos += (long)m2Dir * MICROSTEPS;
 
+  long m2Abs = (m2MicrostepPos >= 0) ? m2MicrostepPos : -m2MicrostepPos;
+  bool stopAfterBackward = (m2Abs >= pitchMaxMicrosteps);
+
   // Set direction reverse
   digitalWrite(M1_DIR_PIN, HIGH);
   
@@ -74,10 +89,16 @@ void loop() {
   
   delay(100);
 
+  if (stopAfterBackward) {
+    emitEvent("DONE");
+    digitalWrite(ENABLE_PIN, HIGH);
+    scanComplete = true;
+    return;
+  }
+
   digitalWrite(M2_DIR_PIN, (m2Dir > 0) ? LOW : HIGH);
   stepPulses(M2_STEP_PIN, MICROSTEPS);
   m2MicrostepPos += (long)m2Dir * MICROSTEPS;
-  emitEvent("DONE");
 
 }
 
